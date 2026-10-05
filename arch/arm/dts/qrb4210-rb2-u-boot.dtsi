@@ -1,0 +1,29 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/ {
+	/* When running as the primary bootloader there is no prior
+	 * stage to populate the memory layout for us. We *should*
+	 * have two nodes here, but ABL does NOT like that.
+	 * sooo we're stuck with this.
+	 */
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0 0x40000000 0 0x3EB00000>,
+		      <0 0x80000000 0 0x40000000>;
+	};
+};
+
+/* The Qualcomm crypto driver is really broken */
+&crypto {
+	status = "disabled";
+};
+
+/* This is not supported */
+&sdhc_2 {
+	status = "disabled";
+};
+
+/* This is usually OTG but U-Boot doesn't support that properly */
+&usb_dwc3 {
+	dr_mode = "host";
+};

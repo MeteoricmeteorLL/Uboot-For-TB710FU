@@ -1,0 +1,41 @@
+// SPDX-License-Identifier: GPL-2.0
+
+/ {
+	chosen {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		framebuffer: framebuffer@9d400000 {
+			compatible = "simple-framebuffer";
+			reg = <0 0x9d400000 0 0x2400000>;
+			width = <1920>;
+			height = <1080>;
+			stride = <(1920 * 4)>;
+			format = "a8r8g8b8";
+		};
+	};
+
+	/* When running as a first-stage bootloader or with embedded
+	 * DT we can't rely on this being populated for us.
+	 */
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0 0x80000000 0 0xfdfa0000>;
+	};
+};
+
+/* Needed for Linux to boot from USB, otherwise if PCIe driver is not in initramfs
+ * the VBUS supply will never get turned on.
+ * https://lore.kernel.org/linux-arm-msm/20240320122515.3243711-1-caleb.connolly@linaro.org/
+ */
+&pcie0_3p3v_dual {
+	regulator-always-on;
+};
+
+&sdhc_2 {
+	/* Remove the unsupported rpmhcc xo clock reference */
+	clocks = <&gcc GCC_SDCC2_AHB_CLK>,
+		 <&gcc GCC_SDCC2_APPS_CLK>;
+	clock-names = "iface", "core";
+};

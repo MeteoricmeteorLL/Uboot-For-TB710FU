@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# QCOM Soc drivers
+#
+menuconfig SOC_QCOM
+	bool "Qualcomm SOC drivers support"
+	help
+	  Say Y here if you want to enable Qualcomm SOC drivers support.
+
+if SOC_QCOM
+
+config QCOM_COMMAND_DB
+	bool "Qualcomm Command DB"
+	help
+	  Command DB queries shared memory by key string for shared system
+	  resources. Platform drivers that require to set state of a shared
+	  resource on a RPM-hardened platform must use this database to get
+	  SoC specific identifier and information for the shared resources.
+
+config QCOM_RPMH
+	bool "Qualcomm RPMh support"
+	depends on QCOM_COMMAND_DB
+	help
+	  Say y here to support the Qualcomm RPMh (resource peripheral manager)
+	  if you need to control regulators on Qualcomm platforms, say y here.
+
+config QCOM_SMEM
+	bool "Qualcomm SMEM support"
+	help
+	  Say y here to support the Qualcomm SMEM (shared memory) client driver.
+	  SMEM is a shared memory region that is used to pass information about
+	  the hardware (e.g. DRAM layout, PMIC configuration, etc) between bootloader
+	  staged and the OS. If in doubt, say y.
+
+endif # SOC_QCOM
