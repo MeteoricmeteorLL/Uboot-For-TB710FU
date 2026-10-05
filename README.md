@@ -57,6 +57,37 @@ XBL(原厂) → ABL(原厂,加载 boot 槽镜像)
 - board_r 只跑 `init_sequence_r[0..14]`,其余驱动手动逐个拉起 —— 完整的 dm_autoprobe
   在这块板子上会挂死。
 
+> 屏幕上的色块与大字日志如何判读(启动卡在哪一步、失败屏是什么意思):
+> **[docs/BOOT-DIAGNOSTICS.md](docs/BOOT-DIAGNOSTICS.md)**。
+
+
+### 分区的创建与修改
+
+U-Boot 找分区的方式:遍历 SCSI 设备 0..127,逐个走 GPT 分区表(1..64),把分区名与
+`linboot` 做**字符串比较**(刻意不用 `part_get_info_by_name()` —— 它在部分表上会
+误报 -ENOENT)。所以分区名必须精确是 `linboot`(即 PARTLABEL)。
+
+**创建**(≥ 24.16 MiB,建议 1 GiB;在 TWRP 或运行中的 Linux 上):
+```sh
+# 本机 UFS 逻辑扇区为 4096 字节,sgdisk -p 显示的就是 4K 单位,勿与 512B 混算
+sgdisk --new=14:START:END --change-name=14:linboot --typecode=14:8300 /dev/sda
+partx -a --nr 14 /dev/sda        # 在线通知内核;TWRP 下可能需要重启一次再验证
+```
+(START/END 用 `sgdisk -p` 看现有分区现算;收缩 userdata 前先备份数据。)
+
+**写入引导内容**(裸 dd,不建文件系统;X = linboot 的设备节点):
+```sh
+dd if=Image.gz          of=/dev/sdaX bs=4096 seek=0    conv=notrunc   # 内核,≤16MiB
+dd if=initramfs.cpio.gz of=/dev/sdaX bs=4096 seek=4096 conv=notrunc   # 16MiB 处,≤2MiB
+dd if=dtb.bin           of=/dev/sdaX bs=4096 seek=6144 conv=notrunc   # 24MiB 处,≤160KiB,不足补零
+```
+(`seek` 按 4KiB 块计:4096 块 = 16MiB,6144 块 = 24MiB。)
+
+**修改布局**:全部常量在 `common/board_r.c`,按 `TB710FU:` 注释定位:
+- 分区名:两处扫描循环里的 `strcmp(..., "linboot")`;
+- 内核窗口 `0x1000` 块;initramfs 偏移 `+0x1000` / `0x800` 块;DTB 偏移 `+0x1800` / `0x28` 块;
+- 注意块数按设备逻辑块算(本机 4096B;512B 逻辑块的设备要 ×8)。改完重编译打包即可。
+
 ## ⚠️ 已知问题:启动时间很长
 
 **现象**:冷启动后 U-Boot 阶段屏幕会停留大段大字日志(依次 DM INIT → KERNEL READ →
@@ -119,9 +150,6 @@ python3 tb710fu-tools/pack_uboot_image.py <模板boot镜像> u-boot.bin boot_b-o
 fastboot flash boot_b boot_b-out.img
 fastboot set_active a && fastboot set_active b && fastboot erase misc
 ```
-
-**必须冷启动验证**:长按电源约 15 秒彻底断电 → 松手后再开机。
-`fastboot reboot` 热重启在本机会失败(UFS/USB 控制器状态残留)。
 
 逃生门:memboot 一开始就会往 misc 写 `bootonce-bootloader` BCB → 若它自己挂了,
 下次开机 ABL 直接进 fastboot;也可长按电源+音量减手动进。刷 boot_b 属于改引导链,
@@ -199,6 +227,43 @@ XBL (stock) → ABL (stock, loads the boot-slot image)
   address).
 - board_r only runs `init_sequence_r[0..14]`; remaining drivers are brought up
   manually — a full `dm_autoprobe` hangs this board.
+
+> How to read the color bars and the big on-screen log (which stage a boot is
+> stuck at, what the failure screens mean):
+> **[docs/BOOT-DIAGNOSTICS.md](docs/BOOT-DIAGNOSTICS.md)**.
+
+
+### Creating and changing the `linboot` partition
+
+How U-Boot finds it: it walks SCSI devices 0..127, GPT entries 1..64 each, and
+**string-compares** the partition name against `linboot` (deliberately not
+`part_get_info_by_name()`, which reports -ENOENT on some tables). The GPT name
+must be exactly `linboot` (= PARTLABEL).
+
+**Creating** (≥ 24.16 MiB; 1 GiB recommended — from TWRP or a running Linux):
+```sh
+# This UFS reports 4096-byte logical sectors: sgdisk -p numbers are 4 KiB units,
+# do not mix them with 512-byte ones.
+sgdisk --new=14:START:END --change-name=14:linboot --typecode=14:8300 /dev/sda
+partx -a --nr 14 /dev/sda        # online re-read; under TWRP a reboot may be needed to verify
+```
+(Compute START/END from `sgdisk -p`; back up data before shrinking userdata.)
+
+**Populating** (raw dd, no filesystem; X = the linboot device node):
+```sh
+dd if=Image.gz          of=/dev/sdaX bs=4096 seek=0    conv=notrunc   # kernel, ≤16 MiB
+dd if=initramfs.cpio.gz of=/dev/sdaX bs=4096 seek=4096 conv=notrunc   # at 16 MiB, ≤2 MiB
+dd if=dtb.bin           of=/dev/sdaX bs=4096 seek=6144 conv=notrunc   # at 24 MiB, ≤160 KiB, zero-padded
+```
+(`seek` counts 4 KiB blocks: 4096 blocks = 16 MiB, 6144 blocks = 24 MiB.)
+
+**Changing the layout**: all constants live in `common/board_r.c` under
+`TB710FU:` comments:
+- the partition name: the two `strcmp(..., "linboot")` scan loops;
+- kernel window `0x1000` blocks; initramfs `+0x1000` offset / `0x800` blocks;
+  DTB `+0x1800` offset / `0x28` blocks;
+- block counts are in the device's logical blocks (4096 B here; ×8 on a
+  512 B-sector device). Rebuild and repack after changes.
 
 ## ⚠️ Known issue: boot takes a long time
 
@@ -279,10 +344,6 @@ python3 tb710fu-tools/pack_uboot_image.py <template-boot-image> u-boot.bin boot_
 fastboot flash boot_b boot_b-out.img
 fastboot set_active a && fastboot set_active b && fastboot erase misc
 ```
-
-**Cold-boot verification is mandatory**: hold the power button ~15 s for a full
-power-off, release, then power on. A hot `fastboot reboot` fails on this device
-(residual UFS/USB controller state).
 
 Escape hatch: memboot writes the `bootonce-bootloader` BCB into `misc` before
 doing anything risky — if it hangs, the next boot drops straight into fastboot
