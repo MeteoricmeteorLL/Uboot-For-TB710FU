@@ -114,8 +114,8 @@ U-Boot 需要包成 ABL 能接受的 Android boot 镜像:4 KiB `ANDROID!` 头(�
 `u-boot.bin` 的 gzip。`tb710fu-tools/pack_uboot_image.py` 即做此事:
 
 ```sh
-gzip -9 -c u-boot.bin > u-boot.bin.gz
-python3 tb710fu-tools/pack_uboot_image.py <模板boot镜像> u-boot.bin.gz boot_b-out.img
+# 脚本内部完成 gzip(mtime=0)并写入 ANDROID! 头;模板可以是整份已知良好 boot 镜像,脚本只取前 4 KiB
+python3 tb710fu-tools/pack_uboot_image.py <模板boot镜像> u-boot.bin boot_b-out.img
 fastboot flash boot_b boot_b-out.img
 fastboot set_active a && fastboot set_active b && fastboot erase misc
 ```
@@ -273,8 +273,9 @@ template; `kernel_size` = gzip payload length) followed by gzipped
 `u-boot.bin`. `tb710fu-tools/pack_uboot_image.py` does exactly this:
 
 ```sh
-gzip -9 -c u-boot.bin > u-boot.bin.gz
-python3 tb710fu-tools/pack_uboot_image.py <template-boot-image> u-boot.bin.gz boot_b-out.img
+# The script gzips u-boot.bin itself (mtime=0) and writes the ANDROID! header;
+# the template can be a full known-good boot image (only its first 4 KiB are used).
+python3 tb710fu-tools/pack_uboot_image.py <template-boot-image> u-boot.bin boot_b-out.img
 fastboot flash boot_b boot_b-out.img
 fastboot set_active a && fastboot set_active b && fastboot erase misc
 ```
