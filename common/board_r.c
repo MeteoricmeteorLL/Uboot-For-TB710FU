@@ -1713,14 +1713,40 @@ void board_init_r(gd_t *new_gd, ulong dest_addr)
 				}
 			}
 			if (off >= 0) {
-				u32 reg[4] = { 0, 0xd5100000, 0, 0x1900000 };
+				/* TB710FU: the cells go into the tree verbatim and are big-endian,
+				 * so they must be swapped here.  Without cpu_to_fdt32() they
+				 * read back as 0x10d5/0x9001: the kernel then reserved 36 KB
+				 * in the wrong place instead of this 25 MiB, the allocator
+				 * handed the pages out, and the kernel console overwrote
+				 * them (see docs/KNOWN-ISSUES.md §1). */
+				u32 reg[4] = { 0, cpu_to_fdt32(0xd5100000),
+					       0, cpu_to_fdt32(0x1900000) };
 				int fn = fdt_add_subnode(fdt, off,
 							 "framebuffer@d5100000");
 
 				if (fn >= 0) {
 					fdt_setprop(fdt, fn, "reg", reg,
 						    sizeof(reg));
-					fdt_setprop_empty(fdt, fn, "no-map");
+				}
+
+				/* TB710FU: the black box log rings (tb_bb_pa[] in the kernel's
+				 * init/main.c) need the same rule: reserved, so the allocator
+				 * keeps off them, and still mapped, because the kernel writes
+				 * them through __va().  This sits outside the if above on
+				 * purpose: a DTB that already declares the framebuffer node
+				 * makes fdt_add_subnode fail, and the rings are still ours. */
+				{
+					u32 bba_reg[4] = { 0, cpu_to_fdt32(0xb0000000),
+							   0, cpu_to_fdt32(0x100000) };
+					u32 bbb_reg[4] = { 0, cpu_to_fdt32(0xd6a00000),
+							   0, cpu_to_fdt32(0x100000) };
+					int bba = fdt_add_subnode(fdt, off, "tb-blackbox-a@b0000000");
+					int bbb = fdt_add_subnode(fdt, off, "tb-blackbox-b@d6a00000");
+
+					if (bba >= 0)
+						fdt_setprop(fdt, bba, "reg", bba_reg, sizeof(bba_reg));
+					if (bbb >= 0)
+						fdt_setprop(fdt, bbb, "reg", bbb_reg, sizeof(bbb_reg));
 				}
 			}
 
